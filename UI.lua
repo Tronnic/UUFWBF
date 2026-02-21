@@ -6,6 +6,26 @@ local function SafePrint(msg)
   end
 end
 
+-- Execute slash command immediately (no "press enter")
+local function ExecSlash(cmd)
+  if type(cmd) ~= "string" or cmd == "" then return end
+
+  -- Prefer direct slash handler if present (fastest / most reliable)
+  if SlashCmdList and SlashCmdList["UUF"] and cmd:lower() == "/uuf" then
+    SlashCmdList["UUF"]("")
+    return
+  end
+
+  -- Fallback: macro execution runs slash immediately
+  if RunMacroText then
+    RunMacroText(cmd)
+    return
+  end
+
+  -- Last fallback: put into chat (may require enter on some clients)
+  ChatFrame_OpenChat(cmd)
+end
+
 local function GetSpellNameSafe(id)
   if C_Spell and C_Spell.GetSpellName then
     return C_Spell.GetSpellName(id)
@@ -204,7 +224,6 @@ local function RenderRowList()
 
     row.remove:SetScript("OnClick", function()
       UnblacklistSpellId(id)
-      -- keep list usable after deletions
       RenderRowList()
     end)
   end
@@ -284,6 +303,8 @@ local function CreateOptionsUI()
   debug:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -6)
   debug:SetText("IDs in blacklist: ?")
 
+
+
   -- Add SpellID
   local addLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   addLabel:SetPoint("TOPLEFT", debug, "BOTTOMLEFT", 0, -12)
@@ -346,6 +367,15 @@ local function CreateOptionsUI()
   refreshBtn:SetPoint("LEFT", dumpBtn, "RIGHT", 10, 0)
   refreshBtn:SetText("Refresh list")
   refreshBtn:SetScript("OnClick", RenderRowList)
+
+  -- Open UUF settings button
+  local openUUFBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  openUUFBtn:SetSize(160, 24)
+  openUUFBtn:SetPoint("LEFT", refreshBtn, "RIGHT", 10, 0)
+  openUUFBtn:SetText("Open /uuf Settings")
+  openUUFBtn:SetScript("OnClick", function()
+    ExecSlash("/uuf")
+  end)
 
   -- Buttons row 2
   local allBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -442,6 +472,16 @@ local function CreateOptionsUI()
   else
     InterfaceOptions_AddCategory(frame)
   end
+
+  -- Footer / credits
+local credits = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+credits:SetPoint("BOTTOM", frame, "BOTTOM", 0, 8)
+credits:SetJustifyH("CENTER")
+
+credits:SetText(
+  "Made by |cFFFFFFFFFraenky-Blackhand|r, " ..
+  "special thanks to |cFFB366FFSurøkoida-Blackhand|r for testing & emotional Support <3"
+)
 
   SafePrint("To configure UUF World Buff Filter type /uufwbf opt")
 end

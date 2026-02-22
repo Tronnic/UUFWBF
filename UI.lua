@@ -6,23 +6,20 @@ local function SafePrint(msg)
   end
 end
 
--- Execute slash command immediately (no "press enter")
+-- Execute slash command
 local function ExecSlash(cmd)
   if type(cmd) ~= "string" or cmd == "" then return end
 
-  -- Prefer direct slash handler if present (fastest / most reliable)
   if SlashCmdList and SlashCmdList["UUF"] and cmd:lower() == "/uuf" then
     SlashCmdList["UUF"]("")
     return
   end
 
-  -- Fallback: macro execution runs slash immediately
   if RunMacroText then
     RunMacroText(cmd)
     return
   end
 
-  -- Last fallback: put into chat (may require enter on some clients)
   ChatFrame_OpenChat(cmd)
 end
 
@@ -40,6 +37,8 @@ end
 local UI = {
   frame = nil,
   debug = nil,
+  lockText = nil,
+  isLocked = false,
 
   -- row list (scrollable)
   scroll = nil,
@@ -55,11 +54,52 @@ local UI = {
   dd = nil,
   ddLabel = nil,
   ddSelected = nil, -- spellId
+
+  -- controls (for locking)
+  addEdit = nil,
+  addBtn = nil,
+  remEdit = nil,
+  remBtn = nil,
+  dumpBtn = nil,
+  refreshBtn = nil,
+  openUUFBtn = nil,
+  allBtn = nil,
+  clearBtn = nil,
+  hideBlizzCB = nil,
+  ddAddBtn = nil,
+  ddRefreshBtn = nil,
 }
 
 local function EnsureDB()
   UUF_WBF_DB = UUF_WBF_DB or {}
   UUF_WBF_DB.blacklist = UUF_WBF_DB.blacklist or {}
+  if UUF_WBF_DB.hideBlizzBuffs == nil then
+    UUF_WBF_DB.hideBlizzBuffs = true
+  end
+end
+
+-- Lock settings in combat or any instance
+local function IsSettingsLocked()
+  if (InCombatLockdown and InCombatLockdown())
+     or (UnitAffectingCombat and UnitAffectingCombat("player")) then
+    return true, "combat"
+  end
+
+  if IsInInstance then
+    local inInstance, instanceType = IsInInstance()
+
+    if inInstance and (
+         instanceType == "party" or
+         instanceType == "raid" or
+         instanceType == "pvp" or
+         instanceType == "arena" or
+         instanceType == "scenario"
+    ) then
+      return true, instanceType
+    end
+  end
+
+  return false, nil
 end
 
 local function SortedBlacklistIDs()
@@ -78,7 +118,54 @@ local function RefreshUUF()
   end
 end
 
+local function ApplySettingsLockState()
+  if not UI.frame then return end
+
+  local locked, reason = IsSettingsLocked()
+  UI.isLocked = locked
+
+  local function SetEnabled(widget, enable)
+    if not widget then return end
+    if enable then
+      if widget.Enable then widget:Enable() end
+      if widget.SetAlpha then widget:SetAlpha(1.0) end
+    else
+      if widget.Disable then widget:Disable() end
+      if widget.SetAlpha then widget:SetAlpha(0.5) end
+    end
+  end
+
+  -- Disable actions that can read buffs / modify blacklist
+  SetEnabled(UI.addEdit, not locked)
+  SetEnabled(UI.addBtn,  not locked)
+  SetEnabled(UI.remEdit, not locked)
+  SetEnabled(UI.remBtn,  not locked)
+
+  SetEnabled(UI.dumpBtn, not locked)
+  SetEnabled(UI.allBtn,  not locked)
+  SetEnabled(UI.ddAddBtn,     not locked)
+  SetEnabled(UI.ddRefreshBtn, not locked)
+  SetEnabled(UI.clearBtn,  not locked)
+  SetEnabled(UI.refreshBtn, not locked)
+  SetEnabled(UI.hideBlizzCB, not locked)
+  SetEnabled(UI.openUUFBtn, true)
+
+  if UI.lockText then
+    if locked then
+      UI.lockText:SetText("Settings locked (" .. tostring(reason) .. ").")
+    else
+      UI.lockText:SetText("")
+    end
+  end
+end
+
 local function DumpPlayerBuffsToChat()
+  local locked = IsSettingsLocked()
+  if locked then
+    SafePrint("Cannot read buffs right now (combat/instance).")
+    return
+  end
+
   DEFAULT_CHAT_FRAME:AddMessage("=== Player Buffs ===")
   for i = 1, 80 do
     local a = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
@@ -103,6 +190,12 @@ local function UnblacklistSpellId(id)
 end
 
 local function BlacklistAllCurrentBuffs()
+  local locked = IsSettingsLocked()
+  if locked then
+    SafePrint("Cannot read buffs right now (combat/instance).")
+    return
+  end
+
   EnsureDB()
   local added = 0
   for i = 1, 80 do
@@ -123,6 +216,31 @@ local function ClearBlacklist()
   RefreshUUF()
   SafePrint("Blacklist cleared.")
 end
+
+-- popup for clear blacklist button
+StaticPopupDialogs["UUF_WBF_CONFIRM_CLEAR_BLACKLIST"] = {
+  text = "Are you sure you want to clear your blacklist?\nThis can not be undone!",
+  button1 = "Yes",
+  button2 = "Cancel",
+  OnAccept = function()
+    if UI and UI.isLocked then
+      SafePrint("Settings locked (combat/instance).")
+      return
+    end
+    ClearBlacklist()
+    UI.scrollOffset = 0
+	
+    if UI and UI.refreshBtn and UI.refreshBtn.Click then
+      UI.refreshBtn:Click()
+    elseif UI and UI.RenderRowList then
+      UI.RenderRowList()
+    end
+  end,
+  timeout = 0,
+  whileDead = true,
+  hideOnEscape = true,
+  preferredIndex = 3,
+}
 
 -- ---------- ROW LIST UI (SCROLLABLE) ----------
 
@@ -145,6 +263,8 @@ local function EnsureRows()
   end
 end
 
+local isUpdatingScroll = false
+
 local function UpdateScrollRange(totalItems)
   if not (UI.scroll and UI.scrollBar and UI.listParent) then return end
 
@@ -161,8 +281,11 @@ local function UpdateScrollRange(totalItems)
   if UI.scrollOffset < 0 then UI.scrollOffset = 0 end
 
   local targetValue = UI.scrollOffset * UI.rowHeight
+
+  isUpdatingScroll = true
   UI.scrollBar:SetValue(targetValue)
   UI.scroll:SetVerticalScroll(targetValue)
+  isUpdatingScroll = false
 
   if maxScroll > 0 then
     UI.scrollBar:Show()
@@ -223,22 +346,40 @@ local function RenderRowList()
     end
 
     row.remove:SetScript("OnClick", function()
+      if UI.isLocked then
+        SafePrint("Settings locked (combat/instance).")
+        return
+      end
       UnblacklistSpellId(id)
       RenderRowList()
     end)
   end
 end
 
+if UI and UI.RenderRowList then
+  UI.RenderRowList()
+end
+
 -- ---------- DROPDOWN (current buffs) ----------
 
 local function GetCurrentBuffChoices()
+  local locked = IsSettingsLocked()
+  if locked then
+    return {}
+  end
+
+  EnsureDB()
+
   local choices = {}
   local seen = {}
 
   for i = 1, 80 do
     local a = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
     if not a then break end
-    if a.spellId and not seen[a.spellId] then
+
+    if a.spellId
+      and not seen[a.spellId]
+      and not UUF_WBF_DB.blacklist[a.spellId] then -- show only NOT blacklisted
       seen[a.spellId] = true
       local name = a.name or GetSpellNameSafe(a.spellId) or ("ID " .. tostring(a.spellId))
       table.insert(choices, { spellId = a.spellId, name = name })
@@ -263,7 +404,7 @@ local function Dropdown_Initialize(self, level)
 
   local choices = GetCurrentBuffChoices()
   if #choices == 0 then
-    info.text = "No buffs found"
+    info.text = UI.isLocked and "Locked (combat/instance)" or "No buffs found"
     info.disabled = true
     info.func = nil
     UIDropDownMenu_AddButton(info, level)
@@ -273,11 +414,14 @@ local function Dropdown_Initialize(self, level)
   for _, c in ipairs(choices) do
     local id = c.spellId
     local name = c.name or ("ID " .. tostring(id))
-    info.text = string.format("%s (ID %d)", name, id)
+    local text = string.format("%s (ID %d)", name, id)
+
+    info.text = text
     info.disabled = false
     info.func = function()
-      Dropdown_SetSelected(id, info.text)
+      Dropdown_SetSelected(id, text)
     end
+
     UIDropDownMenu_AddButton(info, level)
   end
 end
@@ -303,11 +447,14 @@ local function CreateOptionsUI()
   debug:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -6)
   debug:SetText("IDs in blacklist: ?")
 
-
+  local lockText = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  UI.lockText = lockText
+  lockText:SetPoint("TOPLEFT", debug, "BOTTOMLEFT", 0, -4)
+  lockText:SetText("")
 
   -- Add SpellID
   local addLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  addLabel:SetPoint("TOPLEFT", debug, "BOTTOMLEFT", 0, -12)
+  addLabel:SetPoint("TOPLEFT", lockText, "BOTTOMLEFT", 0, -12)
   addLabel:SetText("Add SpellID:")
 
   local addEdit = CreateFrame("EditBox", nil, frame, "InputBoxTemplate")
@@ -337,7 +484,16 @@ local function CreateOptionsUI()
   remBtn:SetPoint("LEFT", remEdit, "RIGHT", 8, 0)
   remBtn:SetText("Remove")
 
+  UI.addEdit = addEdit
+  UI.addBtn  = addBtn
+  UI.remEdit = remEdit
+  UI.remBtn  = remBtn
+
   addBtn:SetScript("OnClick", function()
+    if UI.isLocked then
+      SafePrint("Settings locked (combat/instance).")
+      return
+    end
     local id = tonumber(addEdit:GetText() or "")
     if not id then return end
     BlacklistSpellId(id)
@@ -347,6 +503,10 @@ local function CreateOptionsUI()
   addEdit:SetScript("OnEnterPressed", function() addBtn:Click() end)
 
   remBtn:SetScript("OnClick", function()
+    if UI.isLocked then
+      SafePrint("Settings locked (combat/instance).")
+      return
+    end
     local id = tonumber(remEdit:GetText() or "")
     if not id then return end
     UnblacklistSpellId(id)
@@ -377,6 +537,10 @@ local function CreateOptionsUI()
     ExecSlash("/uuf")
   end)
 
+  UI.dumpBtn = dumpBtn
+  UI.refreshBtn = refreshBtn
+  UI.openUUFBtn = openUUFBtn
+
   -- Buttons row 2
   local allBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
   allBtn:SetSize(200, 24)
@@ -393,9 +557,64 @@ local function CreateOptionsUI()
   clearBtn:SetPoint("LEFT", allBtn, "RIGHT", 10, 0)
   clearBtn:SetText("Clear blacklist")
   clearBtn:SetScript("OnClick", function()
-    ClearBlacklist()
-    UI.scrollOffset = 0
-    RenderRowList()
+    if UI.isLocked then
+      SafePrint("Settings locked (combat/instance).")
+      return
+    end
+    StaticPopup_Show("UUF_WBF_CONFIRM_CLEAR_BLACKLIST")
+  end)
+
+  UI.allBtn = allBtn
+  UI.clearBtn = clearBtn
+
+  -- Hide Blizz Buffs checkbox
+  local hideBlizzCB = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+  hideBlizzCB:SetPoint("LEFT", clearBtn, "RIGHT", 12, 0)
+
+  if hideBlizzCB.Text then
+    hideBlizzCB.Text:SetText("Hide Blizz Buffs")
+  elseif _G[hideBlizzCB:GetName() .. "Text"] then
+    _G[hideBlizzCB:GetName() .. "Text"]:SetText("Hide Blizz Buffs")
+  end
+
+  UI.hideBlizzCB = hideBlizzCB
+
+  EnsureDB()
+  hideBlizzCB:SetChecked(UUF_WBF_DB.hideBlizzBuffs and true or false)
+
+  -- Apply current state immediately
+  if type(UUF_WBF_SetHideBlizzAuras) == "function" then
+    UUF_WBF_SetHideBlizzAuras(UUF_WBF_DB.hideBlizzBuffs)
+  end
+
+  hideBlizzCB:SetScript("OnClick", function(self)
+    if UI.isLocked then
+      SafePrint("Settings locked (combat/instance).")
+      self:SetChecked(UUF_WBF_DB.hideBlizzBuffs and true or false)
+      return
+    end
+
+    EnsureDB()
+    local on = self:GetChecked() and true or false
+    UUF_WBF_DB.hideBlizzBuffs = on
+
+    if type(UUF_WBF_SetHideBlizzAuras) == "function" then
+      UUF_WBF_SetHideBlizzAuras(on)
+    end
+  end)
+
+  hideBlizzCB:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Hide Blizz Buffs")
+    GameTooltip:AddLine(
+      "Hides Blizz Buffs and Debuffs. They are still there but hidden. If you mouse-over the area, you can still access them",
+      1, 1, 1, true
+    )
+    GameTooltip:Show()
+  end)
+
+  hideBlizzCB:SetScript("OnLeave", function()
+    GameTooltip:Hide()
   end)
 
   -- Dropdown row
@@ -416,9 +635,15 @@ local function CreateOptionsUI()
   ddAddBtn:SetPoint("LEFT", dd, "RIGHT", -8, 2)
   ddAddBtn:SetText("Add")
   ddAddBtn:SetScript("OnClick", function()
+    if UI.isLocked then
+      SafePrint("Settings locked (combat/instance).")
+      return
+    end
     if not UI.ddSelected then return end
     BlacklistSpellId(UI.ddSelected)
     RenderRowList()
+    Dropdown_SetSelected(nil, "Select a buff...")
+    UIDropDownMenu_Initialize(UI.dd, Dropdown_Initialize)
   end)
 
   local ddRefreshBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
@@ -426,9 +651,16 @@ local function CreateOptionsUI()
   ddRefreshBtn:SetPoint("LEFT", ddAddBtn, "RIGHT", 8, 0)
   ddRefreshBtn:SetText("Update")
   ddRefreshBtn:SetScript("OnClick", function()
+    if UI.isLocked then
+      SafePrint("Settings locked (combat/instance).")
+      return
+    end
     Dropdown_SetSelected(nil, "Select a buff...")
     UIDropDownMenu_Initialize(UI.dd, Dropdown_Initialize)
   end)
+
+  UI.ddAddBtn = ddAddBtn
+  UI.ddRefreshBtn = ddRefreshBtn
 
   -- List label
   local listLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -450,6 +682,7 @@ local function CreateOptionsUI()
 
   if UI.scrollBar then
     UI.scrollBar:SetScript("OnValueChanged", function(self, value)
+      if isUpdatingScroll then return end
       value = value or 0
       UI.scrollOffset = math.floor((value / UI.rowHeight) + 0.5)
       RenderRowList()
@@ -474,21 +707,41 @@ local function CreateOptionsUI()
   end
 
   -- Footer / credits
-local credits = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-credits:SetPoint("BOTTOM", frame, "BOTTOM", 0, 8)
-credits:SetJustifyH("CENTER")
+  local creditsWarn = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  creditsWarn:SetPoint("BOTTOM", frame, "BOTTOM", 0, 30)
+  creditsWarn:SetJustifyH("CENTER")
+  creditsWarn:SetText("This addon only really works for 'persistent' buffs, short term buffs can be hidden, but will \n show up when they are applied during combat due to 12.0+ Blizzard API Restrictions.")
 
-credits:SetText(
-  "Made by |cFFFFFFFFFraenky-Blackhand|r, " ..
-  "special thanks to |cFFB366FFSurøkoida-Blackhand|r for testing & emotional Support <3"
-)
+  local credits = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  credits:SetPoint("BOTTOM", frame, "BOTTOM", 0, 8)
+  credits:SetJustifyH("CENTER")
+  credits:SetText(
+    "Made by |cFFFFFFFFFraenky-Blackhand|r, " ..
+    "special thanks to |cFFB366FFSurøkoida-Blackhand|r for testing & emotional Support <3"
+  )
 
-  SafePrint("To configure UUF World Buff Filter type /uufwbf opt")
+  SafePrint("To configure UUF World Buff Filter go to ESC > Options > Addons > UUF World Buff Filter")
+
+  -- Apply lock state after all controls exist
+  ApplySettingsLockState()
 end
 
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
-f:SetScript("OnEvent", function()
-  CreateOptionsUI()
-  C_Timer.After(0.4, RenderRowList)
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("PLAYER_REGEN_DISABLED")
+f:RegisterEvent("PLAYER_REGEN_ENABLED")
+
+f:SetScript("OnEvent", function(_, event)
+  if event == "PLAYER_LOGIN" then
+    CreateOptionsUI()
+    C_Timer.After(0.4, RenderRowList)
+  end
+
+  -- Update lock state on combat/zone changes
+  ApplySettingsLockState()
+
+  if not UI.isLocked and UI.dd then
+    UIDropDownMenu_Initialize(UI.dd, Dropdown_Initialize)
+  end
 end)

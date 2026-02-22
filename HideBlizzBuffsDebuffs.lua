@@ -1,6 +1,9 @@
 -- HideBlizzBuffsDebuffs.lua
 
-local enabled = false
+local function IsEnabled()
+  return UUF_WBF_DB and UUF_WBF_DB.hideBlizzBuffs == true
+end
+
 local updater
 
 local function IsMouseOverFrameOrContainer(frame)
@@ -17,7 +20,7 @@ end
 local function ApplyOne(frame)
   if not frame then return end
   frame:Show()
-  if enabled then
+  if IsEnabled() then
     frame:SetAlpha(0)
   else
     frame:SetAlpha(1)
@@ -33,16 +36,16 @@ local function EnsureUpdater()
   if updater then return end
   updater = CreateFrame("Frame")
   updater:SetScript("OnUpdate", function()
-    if not enabled then return end
+    local enabled = IsEnabled()
 
     if BuffFrame then
-      local show = IsMouseOverFrameOrContainer(BuffFrame)
+      local show = (not enabled) or IsMouseOverFrameOrContainer(BuffFrame)
       BuffFrame:SetAlpha(show and 1 or 0)
       BuffFrame:Show()
     end
 
     if DebuffFrame then
-      local show = IsMouseOverFrameOrContainer(DebuffFrame)
+      local show = (not enabled) or IsMouseOverFrameOrContainer(DebuffFrame)
       DebuffFrame:SetAlpha(show and 1 or 0)
       DebuffFrame:Show()
     end
@@ -50,12 +53,11 @@ local function EnsureUpdater()
 end
 
 function UUF_WBF_SetHideBlizzAuras(state)
-  enabled = state and true or false
+  UUF_WBF_DB = UUF_WBF_DB or {}
+  UUF_WBF_DB.hideBlizzBuffs = state and true or false
 
   C_Timer.After(0, function()
-    if enabled then
-      EnsureUpdater()
-    end
+    EnsureUpdater()
     ApplyAll()
   end)
 end

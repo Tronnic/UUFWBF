@@ -43,9 +43,23 @@ local function EnsureDB()
   UUF_WBF_DB.blacklist = UUF_WBF_DB.blacklist or {}
 end
 
+local function SafeGetSpellId(data)
+  if not data then return nil end
+  local ok, sid = pcall(function() return data.spellId end)
+  if ok then return sid end
+  return nil
+end
+
 local function IsBlacklisted(spellID)
   EnsureDB()
-  return spellID and UUF_WBF_DB.blacklist[spellID] == true
+  if not spellID then return false end
+  local ok, isBl = pcall(function()
+    return UUF_WBF_DB.blacklist[spellID] == true
+  end)
+  if not ok then
+    return false
+  end
+  return isBl
 end
 
 function UUF_WBF.Refresh()
@@ -60,54 +74,33 @@ end
 function UUF_WBF.Add(id)
   EnsureDB()
   id = tonumber(id)
-  if not id then return false, "SpellID must be numeric." end
+  if not id then
+    Print("Usage: /uufwbf add <spellID>")
+    return
+  end
   UUF_WBF_DB.blacklist[id] = true
+  Print("Added to blacklist: " .. id)
   UUF_WBF.Refresh()
-  return true
 end
 
 function UUF_WBF.Remove(id)
   EnsureDB()
   id = tonumber(id)
-  if not id then return false, "SpellID must be numeric." end
+  if not id then
+    Print("Usage: /uufwbf remove <spellID>")
+    return
+  end
   UUF_WBF_DB.blacklist[id] = nil
+  Print("Removed from blacklist: " .. id)
   UUF_WBF.Refresh()
-  return true
 end
 
-function UUF_WBF.GetBlacklistSorted()
+function UUF_WBF.List()
   EnsureDB()
-  local t = {}
-  for id, v in pairs(UUF_WBF_DB.blacklist) do
-    if v then table.insert(t, tonumber(id)) end
-  end
-  table.sort(t)
-  return t
-end
-
--- spell name lookup 
-function UUF_WBF.GetSpellName(id)
-  id = tonumber(id)
-  if not id then return "Invalid ID" end
-
-  if C_Spell and C_Spell.GetSpellName then
-    return C_Spell.GetSpellName(id) or ("ID " .. tostring(id))
-  end
-
-  if _G.GetSpellInfo then
-    local name = _G.GetSpellInfo(id)
-    return name or ("ID " .. tostring(id))
-  end
-
-  return "ID " .. tostring(id)
-end
-
-function UUF_WBF.DumpPlayerBuffsToChat()
-  DEFAULT_CHAT_FRAME:AddMessage("=== Player Buffs (HELPFUL) ===")
-  for i = 1, 80 do
-    local a = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
-    if not a then break end
-    DEFAULT_CHAT_FRAME:AddMessage((a.name or "?") .. " ID=" .. tostring(a.spellId))
+  Print("Blacklist:")
+  DEFAULT_CHAT_FRAME:AddMessage("=== start ===")
+  for id in pairs(UUF_WBF_DB.blacklist) do
+    DEFAULT_CHAT_FRAME:AddMessage(tostring(id))
   end
   DEFAULT_CHAT_FRAME:AddMessage("=== end ===")
 end
@@ -124,7 +117,8 @@ local function HookUUF()
   originalFilter = buffsFrame.FilterAura
 
   buffsFrame.FilterAura = function(self, unit, data, filter)
-    if data and IsBlacklisted(data.spellId) then
+    local spellID = SafeGetSpellId(data)
+    if spellID and IsBlacklisted(spellID) then
       return false
     end
     if originalFilter then
@@ -139,71 +133,18 @@ local function HookUUF()
   return true
 end
 
--- Bootstrap: hook after UUF has created frames
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
-f:SetScript("OnEvent", function()
-  local tries = 0
-  local function TryHook()
-    tries = tries + 1
-    if HookUUF() then return end
-    if tries < 40 then
-      C_Timer.After(0.25, TryHook)
-    else
-      Print("Could not hook UUF. Is Unhalted Unit Frames enabled?")
-    end
+f:RegisterEvent("ADDON_LOADED")
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+f:SetScript("OnEvent", function(_, event, addonName)
+  if event == "ADDON_LOADED" and addonName == "UUFWorldBuffFilter" then
+    EnsureDB()
+    SeedDefaultsIfEmpty()
   end
-  TryHook()
+
+  if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" or event == "ADDON_LOADED" then
+    HookUUF()
+  end
 end)
-
--- Slash commands
-SLASH_UUFWBF1 = "/uufwbf"
-SlashCmdList["UUFWBF"] = function(msg)
-  local cmd, rest = msg:match("^(%S+)%s*(.-)$")
-  cmd = cmd and cmd:lower() or ""
-
-  if cmd == "add" then
-    local ok, err = UUF_WBF.Add(rest)
-    if ok then
-      local id = tonumber(rest)
-      Print("Added: " .. tostring(id) .. " (" .. UUF_WBF.GetSpellName(id) .. ")")
-    else
-      Print(err)
-    end
-
-  elseif cmd == "del" then
-    local ok, err = UUF_WBF.Remove(rest)
-    if ok then Print("Removed: " .. rest) else Print(err) end
-
-  elseif cmd == "list" then
-    Print("Blacklisted spellIDs:")
-    local ids = UUF_WBF.GetBlacklistSorted()
-    if #ids == 0 then Print(" (none)") return end
-    for _, id in ipairs(ids) do
-      Print(" - " .. tostring(id) .. " (" .. UUF_WBF.GetSpellName(id) .. ")")
-    end
-
-  elseif cmd == "dump" then
-    UUF_WBF.DumpPlayerBuffsToChat()
-
-  elseif cmd == "refresh" then
-    UUF_WBF.Refresh()
-    Print("Refreshed.")
-	
-elseif cmd == "options" or cmd == "opt" then
-  -- Open WBF options
-  if Settings and Settings.OpenToCategory and UUF_WBF and type(UUF_WBF.SettingsCategoryID) == "number" then
-    Settings.OpenToCategory(UUF_WBF.SettingsCategoryID)
-  else
-    local frame = _G["UUFWorldBuffFilterOptions"]
-    if frame and InterfaceOptionsFrame_OpenToCategory then
-      InterfaceOptionsFrame_OpenToCategory(frame)
-      InterfaceOptionsFrame_OpenToCategory(frame)
-    end
-  end
-
-  else
-    Print("Commands: /uufwbf options | add <spellID> | del <spellID> | list | dump | refresh")
-    Print("GUI: Esc -> Options -> AddOns -> " .. UUF_WBF.ADDON_TITLE)
-  end
-end

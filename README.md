@@ -1,8 +1,8 @@
-UUF World Buff Filter
+UUF |cff7fd5ffWorld Buff Filter|r
 
 <img width="600" height="600" alt="image" src="https://github.com/user-attachments/assets/4b631424-3675-40bf-8300-f7430f99d6fa" />
 
-UUF World Buff Filter allows you to hide unwanted world and miscellaneous buffs from the Player frame in Unhalted Unit Frames (UUF) using a customizable SpellID blacklist.
+UUF |cff7fd5ffWorld Buff Filter|r allows you to hide unwanted world and miscellaneous buffs from the Player frame in Unhalted Unit Frames (UUF) using a customizable SpellID blacklist.
 
 It is designed for players who want a clean buff display and prefer to see only relevant combat, class, or raid buffs while hiding temporary world effects, holiday buffs, zone effects, or other clutter.
 
@@ -34,7 +34,7 @@ Automatic Settings lock while in Combat or Instance
 Settings Location
 You can access the graphical settings here:
 
-Esc → Options → AddOns → UUF World Buff Filter
+Esc → Options → AddOns → UUF |cff7fd5ffWorld Buff Filter|r
 
  
 

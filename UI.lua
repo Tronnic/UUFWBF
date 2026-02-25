@@ -66,6 +66,7 @@ local UI = {
   allBtn = nil,
   clearBtn = nil,
   hideBlizzCB = nil,
+  hideMinimapCB = nil,
   ddAddBtn = nil,
   ddRefreshBtn = nil,
 }
@@ -75,6 +76,11 @@ local function EnsureDB()
   UUF_WBF_DB.blacklist = UUF_WBF_DB.blacklist or {}
   if UUF_WBF_DB.hideBlizzBuffs == nil then
     UUF_WBF_DB.hideBlizzBuffs = true
+  end
+  -- minimap saved state for LibDBIcon
+  UUF_WBF_DB.minimap = UUF_WBF_DB.minimap or {}
+  if UUF_WBF_DB.minimap.hide == nil then
+    UUF_WBF_DB.minimap.hide = false
   end
 end
 
@@ -148,6 +154,7 @@ local function ApplySettingsLockState()
   SetEnabled(UI.clearBtn,  not locked)
   SetEnabled(UI.refreshBtn, not locked)
   SetEnabled(UI.hideBlizzCB, not locked)
+  SetEnabled(UI.hideMinimapCB, not locked)
   SetEnabled(UI.openUUFBtn, true)
 
   if UI.lockText then
@@ -242,7 +249,7 @@ StaticPopupDialogs["UUF_WBF_CONFIRM_CLEAR_BLACKLIST"] = {
   preferredIndex = 3,
 }
 
--- ---------- ROW LIST UI (SCROLLABLE) ----------
+-- ---------- ROW LIST UI ----------
 
 local function EnsureRows()
   if not UI.listParent then return end
@@ -434,9 +441,12 @@ local function CreateOptionsUI()
   local frame = CreateFrame("Frame", "UUFWorldBuffFilterOptions", UIParent)
   UI.frame = frame
 
+  UI.rowHeight = UI.rowHeight or 22
+  UI.maxRows = UI.maxRows or 12
+
   local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   title:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -16)
-  title:SetText("UUF World Buff Filter")
+  title:SetText("UUF |cff7fd5ffWorld Buff Filter|r")
 
   local subtitle = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
@@ -525,14 +535,14 @@ local function CreateOptionsUI()
   local refreshBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
   refreshBtn:SetSize(140, 24)
   refreshBtn:SetPoint("LEFT", dumpBtn, "RIGHT", 10, 0)
-  refreshBtn:SetText("Refresh list")
+  refreshBtn:SetText("Refresh Blacklist")
   refreshBtn:SetScript("OnClick", RenderRowList)
 
   -- Open UUF settings button
   local openUUFBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  openUUFBtn:SetSize(160, 24)
+  openUUFBtn:SetSize(185, 24)
   openUUFBtn:SetPoint("LEFT", refreshBtn, "RIGHT", 10, 0)
-  openUUFBtn:SetText("Open /uuf Settings")
+  openUUFBtn:SetText("Open |cff8080FFUnhalted|rUnitFrames")
   openUUFBtn:SetScript("OnClick", function()
     ExecSlash("/uuf")
   end)
@@ -543,7 +553,7 @@ local function CreateOptionsUI()
 
   -- Buttons row 2
   local allBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  allBtn:SetSize(200, 24)
+  allBtn:SetSize(180, 24)
   allBtn:SetPoint("TOPLEFT", dumpBtn, "BOTTOMLEFT", 0, -8)
   allBtn:SetText("Blacklist all current buffs")
   allBtn:SetScript("OnClick", function()
@@ -553,7 +563,7 @@ local function CreateOptionsUI()
   end)
 
   local clearBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-  clearBtn:SetSize(140, 24)
+  clearBtn:SetSize(120, 24)
   clearBtn:SetPoint("LEFT", allBtn, "RIGHT", 10, 0)
   clearBtn:SetText("Clear blacklist")
   clearBtn:SetScript("OnClick", function()
@@ -579,10 +589,57 @@ local function CreateOptionsUI()
 
   UI.hideBlizzCB = hideBlizzCB
 
+  -- Hide Minimap-Button checkbox
+  local hideMinimapCB = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
+  hideMinimapCB:SetPoint("LEFT", hideBlizzCB, "RIGHT", 85, 0)
+  if hideMinimapCB.Text then
+    hideMinimapCB.Text:SetText("Enable Button")
+  elseif _G[hideMinimapCB:GetName() .. "Text"] then
+    _G[hideMinimapCB:GetName() .. "Text"]:SetText("Enable Button")
+  end
+  UI.hideMinimapCB = hideMinimapCB
+  EnsureDB()
+  hideMinimapCB:SetChecked(not (UUF_WBF_DB.minimap.hide and true or false))
+
+  hideMinimapCB:SetScript("OnClick", function(self)
+    if UI.isLocked then
+      SafePrint("Settings locked (combat/instance).")
+      self:SetChecked(not (UUF_WBF_DB.minimap.hide and true or false))
+      return
+    end
+    EnsureDB()
+    local enabled = self:GetChecked() and true or false
+    UUF_WBF_DB.minimap.hide = not enabled
+
+    local LibStub = _G.LibStub
+    if LibStub then
+      local LDBIcon = LibStub("LibDBIcon-1.0", true)
+      if LDBIcon then
+        pcall(function()
+          if UUF_WBF_DB.minimap.hide then
+            LDBIcon:Hide("UUF_WBF")
+          else
+            LDBIcon:Show("UUF_WBF")
+          end
+        end)
+      end
+    end
+  end)
+
+  hideMinimapCB:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Enable Minimap-Button")
+    GameTooltip:AddLine("Toggle the addon's minimap icon. Checked = visible.", 1,1,1, true)
+    GameTooltip:Show()
+  end)
+
+  hideMinimapCB:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+
   EnsureDB()
   hideBlizzCB:SetChecked(UUF_WBF_DB.hideBlizzBuffs and true or false)
 
-  -- Apply current state immediately
   if type(UUF_WBF_SetHideBlizzAuras) == "function" then
     UUF_WBF_SetHideBlizzAuras(UUF_WBF_DB.hideBlizzBuffs)
   end
@@ -607,7 +664,7 @@ local function CreateOptionsUI()
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText("Hide Blizz Buffs")
     GameTooltip:AddLine(
-      "Hides Blizz Buffs and Debuffs. They are still there but hidden. If you mouse-over the area, you can still access them",
+      "Hides Blizzard Buffs and Debuffs. They are still there but hidden. If you mouse-over the area, you can still access them",
       1, 1, 1, true
     )
     GameTooltip:Show()
@@ -695,7 +752,7 @@ local function CreateOptionsUI()
 
   -- Register in Settings
   if Settings and Settings.RegisterCanvasLayoutCategory then
-    local category = Settings.RegisterCanvasLayoutCategory(frame, "UUF World Buff Filter")
+    local category = Settings.RegisterCanvasLayoutCategory(frame, "UUF |cff7fd5ffWorld Buff Filter|r")
     Settings.RegisterAddOnCategory(category)
 
     UUF_WBF = UUF_WBF or {}
@@ -706,7 +763,7 @@ local function CreateOptionsUI()
     InterfaceOptions_AddCategory(frame)
   end
 
-  -- Footer / credits
+  -- Footer
   local creditsWarn = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   creditsWarn:SetPoint("BOTTOM", frame, "BOTTOM", 0, 30)
   creditsWarn:SetJustifyH("CENTER")
@@ -720,10 +777,33 @@ local function CreateOptionsUI()
     "special thanks to |cFFB366FFSurøkoida-Blackhand|r for testing & emotional Support <3"
   )
 
-  SafePrint("To configure UUF World Buff Filter go to ESC > Options > Addons > UUF World Buff Filter")
+  SafePrint("To configure UUF |cff7fd5ffWorld Buff Filter|r use the Minimap-Icon.")
 
   -- Apply lock state after all controls exist
   ApplySettingsLockState()
+end
+
+-- Expose helpers
+UUF_WBF = UUF_WBF or {}
+UUF_WBF.ExecSlash = ExecSlash
+function UUF_WBF.OpenOptions()
+  -- If settings are locked, do nothing to avoid protected calls
+  local locked = false
+  if IsSettingsLocked then
+    locked = select(1, IsSettingsLocked())
+  end
+  if locked then
+    return
+  end
+
+  CreateOptionsUI()
+  if UUF_WBF and UUF_WBF.SettingsCategoryID and type(Settings) == "table" and type(Settings.OpenToCategory) == "function" then
+    pcall(function() Settings.OpenToCategory(UUF_WBF.SettingsCategoryID) end)
+    return
+  end
+  if UI and UI.frame then
+    pcall(function() InterfaceOptionsFrame_OpenToCategory(UI.frame) end)
+  end
 end
 
 local f = CreateFrame("Frame")

@@ -1,7 +1,9 @@
 ## Interface: 120001
-## Title: UUF World Buff Filter
+## Title: UUF |cff7fd5ffWorld Buff Filter|r
+## Category-enUS: |cFF8080FFUnhalted|r Development
+## Dependencies: UnhaltedUnitFrames
 ## Notes: Hides selected world buffs (or other buffs) from Unhalted Unit Frames.
-## Version: 0.8
+## Version: 0.9
 ## SavedVariables: UUF_WBF_DB
 ## IconTexture: Interface\AddOns\UUFWorldBuffFilter\uufwbf.tga
 ## Author: Fraenky-Blackhand | Tronnic
@@ -10,3 +12,8 @@
 Core.lua
 UI.lua
 HideBlizzBuffsDebuffs.lua
+lib/LibStub/LibStub.lua
+lib/LibDataBroker-1.1/LibDataBroker-1.1.lua
+lib/LibDBIcon-1.0/LibDBIcon-1.0.lua
+lib/LibDBIcon-1.0/lib.xml
+MinimapButton.lua

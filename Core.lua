@@ -9,6 +9,7 @@ local DEFAULT_BLACKLIST = {
   [335150]  = true,
   [1214848] = true,
   [404464]  = true,
+  [404468]  = true,
 }
 
 -- seed defaults
@@ -28,7 +29,7 @@ end
 SeedDefaultsIfEmpty()
 
 UUF_WBF = UUF_WBF or {} -- global table for UI access
-UUF_WBF.ADDON_TITLE = "UUF World Buff Filter"
+UUF_WBF.ADDON_TITLE = "UUF |cff7fd5ffWorld Buff Filter|r"
 
 local hooked = false
 local originalFilter = nil

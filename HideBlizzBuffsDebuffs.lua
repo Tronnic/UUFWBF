@@ -62,7 +62,7 @@ function UUF_WBF_SetHideBlizzAuras(state)
   end)
 end
 
--- Apply saved setting once on login/reload
+-- Apply setting once on login
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:SetScript("OnEvent", function(_, _, isInitialLogin, isReloadingUi)

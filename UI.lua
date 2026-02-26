@@ -249,6 +249,115 @@ StaticPopupDialogs["UUF_WBF_CONFIRM_CLEAR_BLACKLIST"] = {
   preferredIndex = 3,
 }
 
+-- Welcome popup shown on first run
+StaticPopupDialogs["UUF_WBF_WELCOME"] = {
+  text = "Thank you for downloading Unhalted Unit Frames |cFF7fd5ffWorld Buff Filter|r!",
+  button1 = "Addon Settings",
+  button2 = "Close",
+  OnAccept = function(self)
+    EnsureDB()
+    if self.check then
+      UUF_WBF_DB.dont_show_welcome = self.check:GetChecked() and true or false
+    end
+    if UUF_WBF and UUF_WBF.OpenOptions then
+      pcall(UUF_WBF.OpenOptions)
+    end
+  end,
+  OnCancel = function(self)
+    EnsureDB()
+    if self.check then
+      UUF_WBF_DB.dont_show_welcome = self.check:GetChecked() and true or false
+    end
+  end,
+  timeout = 0,
+  whileDead = true,
+  hideOnEscape = true,
+  preferredIndex = 3,
+  OnShow = function(self)
+    if not self.check then
+      local check = CreateFrame("CheckButton", nil, self, "ChatConfigCheckButtonTemplate")
+      check:SetPoint("BOTTOMLEFT", self, "BOTTOMLEFT", 16, 12)
+      if check.Text then
+        check.Text:SetText("Don't show this again")
+      elseif _G[check:GetName() .. "Text"] then
+        _G[check:GetName() .. "Text"]:SetText("Don't show this again")
+      end
+      self.check = check
+    end
+    self.check:SetChecked(true)
+
+    if not self.logo then
+      local logo = self:CreateTexture(nil, "ARTWORK")
+      logo:SetSize(250, 250)
+      logo:SetPoint("TOP", self, "TOP", 0, -16)
+      logo:SetTexture("Interface\\AddOns\\UUFWorldBuffFilter\\uufwbf-logo.tga")
+      logo:SetTexCoord(0, 1, 0, 1)
+      self.logo = logo
+    end
+
+    local mainText = self.text or _G[self:GetName() .. "Text"]
+    if mainText and self.logo then
+      mainText:ClearAllPoints()
+      mainText:SetPoint("TOP", self.logo, "BOTTOM", 0, -12)
+      mainText:SetJustifyH("CENTER")
+      mainText:SetWidth(380)
+    end
+
+    if not self.subtitle then
+      local subtitle = self:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      subtitle:SetPoint("TOP", mainText, "BOTTOM", 0, -12)
+      subtitle:SetWidth(380)
+      subtitle:SetJustifyH("CENTER")
+      subtitle:SetText("Open the 'Addon Settings' to configure.\n\nBlizzard's Buff- & Debuff-Frame will be hidden by default but can be reenabled in Settings.\n\nIf you have any questions or like the addon, feel free to leave comments on the curse comment section!")
+      self.subtitle = subtitle
+    else
+      self.subtitle:SetPoint("TOP", mainText, "BOTTOM", 0, -12)
+      self.subtitle:SetShown(true)
+    end
+
+    pcall(function()
+      C_Timer.After(0.02, function()
+        if not self or not self:IsShown() then return end
+
+        local desiredWidth, desiredHeight = 450, 460
+        if self.SetSize then
+          pcall(function() self:SetSize(desiredWidth, desiredHeight) end)
+        else
+          if self.SetWidth then pcall(function() self:SetWidth(desiredWidth) end) end
+          if self.SetHeight then pcall(function() self:SetHeight(desiredHeight) end) end
+        end
+
+        local baseName = self:GetName() or ""
+        local b1 = _G[baseName .. "Button1"] or _G[baseName .. "Button"] or _G[baseName .. "ButtonBottom"]
+        local b2 = _G[baseName .. "Button2"]
+
+        if b1 then
+          b1:ClearAllPoints()
+          b1:SetPoint("BOTTOM", self, "BOTTOM", -70, 45)
+        end
+        if b2 then
+          b2:ClearAllPoints()
+          b2:SetPoint("BOTTOM", self, "BOTTOM", 70, 45)
+        end
+
+        if not b1 and self.button1 then
+          self.button1:ClearAllPoints()
+          self.button1:SetPoint("BOTTOM", self, "BOTTOM", -100, 36)
+        end
+        if not b2 and self.button2 then
+          self.button2:ClearAllPoints()
+          self.button2:SetPoint("BOTTOM", self, "BOTTOM", 100, 36)
+        end
+
+        if self.check then
+          self.check:ClearAllPoints()
+          self.check:SetPoint("BOTTOMLEFT", self, "BOTTOMLEFT", 18, 16)
+        end
+      end)
+    end)
+  end,
+}
+
 -- ---------- ROW LIST UI ----------
 
 local function EnsureRows()
@@ -816,6 +925,14 @@ f:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" then
     CreateOptionsUI()
     C_Timer.After(0.4, RenderRowList)
+    EnsureDB()
+    if UUF_WBF_DB and UUF_WBF_DB.show_welcome ~= nil then
+      UUF_WBF_DB.dont_show_welcome = UUF_WBF_DB.show_welcome and true or false
+      UUF_WBF_DB.show_welcome = nil
+    end
+    if UUF_WBF_DB and UUF_WBF_DB.dont_show_welcome ~= true then
+      StaticPopup_Show("UUF_WBF_WELCOME")
+    end
   end
 
   -- Update lock state on combat/zone changes

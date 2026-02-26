@@ -3,7 +3,7 @@
 ## Category-enUS: |cFF8080FFUnhalted|r Development
 ## Dependencies: UnhaltedUnitFrames
 ## Notes: Hides selected world buffs (or other buffs) from Unhalted Unit Frames.
-## Version: 0.9
+## Version: 1.0
 ## SavedVariables: UUF_WBF_DB
 ## IconTexture: Interface\AddOns\UUFWorldBuffFilter\uufwbf.tga
 ## Author: Fraenky-Blackhand | Tronnic

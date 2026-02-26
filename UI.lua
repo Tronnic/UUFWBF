@@ -249,114 +249,7 @@ StaticPopupDialogs["UUF_WBF_CONFIRM_CLEAR_BLACKLIST"] = {
   preferredIndex = 3,
 }
 
--- Welcome popup shown on first run
-StaticPopupDialogs["UUF_WBF_WELCOME"] = {
-  text = "Thank you for downloading Unhalted Unit Frames |cFF7fd5ffWorld Buff Filter|r!",
-  button1 = "Addon Settings",
-  button2 = "Close",
-  OnAccept = function(self)
-    EnsureDB()
-    if self.check then
-      UUF_WBF_DB.dont_show_welcome = self.check:GetChecked() and true or false
-    end
-    if UUF_WBF and UUF_WBF.OpenOptions then
-      pcall(UUF_WBF.OpenOptions)
-    end
-  end,
-  OnCancel = function(self)
-    EnsureDB()
-    if self.check then
-      UUF_WBF_DB.dont_show_welcome = self.check:GetChecked() and true or false
-    end
-  end,
-  timeout = 0,
-  whileDead = true,
-  hideOnEscape = true,
-  preferredIndex = 3,
-  OnShow = function(self)
-    if not self.check then
-      local check = CreateFrame("CheckButton", nil, self, "ChatConfigCheckButtonTemplate")
-      check:SetPoint("BOTTOMLEFT", self, "BOTTOMLEFT", 16, 12)
-      if check.Text then
-        check.Text:SetText("Don't show this again")
-      elseif _G[check:GetName() .. "Text"] then
-        _G[check:GetName() .. "Text"]:SetText("Don't show this again")
-      end
-      self.check = check
-    end
-    self.check:SetChecked(true)
-
-    if not self.logo then
-      local logo = self:CreateTexture(nil, "ARTWORK")
-      logo:SetSize(250, 250)
-      logo:SetPoint("TOP", self, "TOP", 0, -16)
-      logo:SetTexture("Interface\\AddOns\\UUFWorldBuffFilter\\uufwbf-logo.tga")
-      logo:SetTexCoord(0, 1, 0, 1)
-      self.logo = logo
-    end
-
-    local mainText = self.text or _G[self:GetName() .. "Text"]
-    if mainText and self.logo then
-      mainText:ClearAllPoints()
-      mainText:SetPoint("TOP", self.logo, "BOTTOM", 0, -12)
-      mainText:SetJustifyH("CENTER")
-      mainText:SetWidth(380)
-    end
-
-    if not self.subtitle then
-      local subtitle = self:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-      subtitle:SetPoint("TOP", mainText, "BOTTOM", 0, -12)
-      subtitle:SetWidth(380)
-      subtitle:SetJustifyH("CENTER")
-      subtitle:SetText("Open the 'Addon Settings' to configure.\n\nBlizzard's Buff- & Debuff-Frame will be hidden by default but can be reenabled in Settings.\n\nIf you have any questions or like the addon, feel free to leave comments on the curse comment section!")
-      self.subtitle = subtitle
-    else
-      self.subtitle:SetPoint("TOP", mainText, "BOTTOM", 0, -12)
-      self.subtitle:SetShown(true)
-    end
-
-    pcall(function()
-      C_Timer.After(0.02, function()
-        if not self or not self:IsShown() then return end
-
-        local desiredWidth, desiredHeight = 450, 460
-        if self.SetSize then
-          pcall(function() self:SetSize(desiredWidth, desiredHeight) end)
-        else
-          if self.SetWidth then pcall(function() self:SetWidth(desiredWidth) end) end
-          if self.SetHeight then pcall(function() self:SetHeight(desiredHeight) end) end
-        end
-
-        local baseName = self:GetName() or ""
-        local b1 = _G[baseName .. "Button1"] or _G[baseName .. "Button"] or _G[baseName .. "ButtonBottom"]
-        local b2 = _G[baseName .. "Button2"]
-
-        if b1 then
-          b1:ClearAllPoints()
-          b1:SetPoint("BOTTOM", self, "BOTTOM", -70, 45)
-        end
-        if b2 then
-          b2:ClearAllPoints()
-          b2:SetPoint("BOTTOM", self, "BOTTOM", 70, 45)
-        end
-
-        if not b1 and self.button1 then
-          self.button1:ClearAllPoints()
-          self.button1:SetPoint("BOTTOM", self, "BOTTOM", -100, 36)
-        end
-        if not b2 and self.button2 then
-          self.button2:ClearAllPoints()
-          self.button2:SetPoint("BOTTOM", self, "BOTTOM", 100, 36)
-        end
-
-        if self.check then
-          self.check:ClearAllPoints()
-          self.check:SetPoint("BOTTOMLEFT", self, "BOTTOMLEFT", 18, 16)
-        end
-      end)
-    end)
-  end,
-}
+-- Welcome popup shown on first run is now handled by a custom frame (CreateWelcomeFrame())
 
 -- ---------- ROW LIST UI ----------
 
@@ -915,6 +808,99 @@ function UUF_WBF.OpenOptions()
   end
 end
 
+-- Create a custom welcome frame (avoids using StaticPopup which is reused)
+local function CreateWelcomeFrame()
+  if UUF_WBF.WelcomeFrame and UUF_WBF.WelcomeFrame.Create then return UUF_WBF.WelcomeFrame end
+
+  local f = CreateFrame("Frame", "UUF_WBF_WelcomeFrame", UIParent, "BackdropTemplate")
+  f:SetSize(520, 480)
+  f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+  f:SetFrameStrata("DIALOG")
+  f:EnableMouse(true)
+
+  f:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background", tile = true, tileSize = 32,
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border", edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 }
+  })
+
+  -- Logo
+  local logo = f:CreateTexture(nil, "ARTWORK")
+  logo:SetSize(250, 250)
+  logo:SetPoint("TOP", f, "TOP", 0, -24)
+  logo:SetTexture("Interface\\AddOns\\UUFWorldBuffFilter\\uufwbf-logo.tga")
+  f.logo = logo
+
+  -- Main title text
+  local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  title:SetPoint("TOP", logo, "BOTTOM", 0, -12)
+  title:SetText("Thank you for downloading Unhalted Unit Frames\n|cFF7fd5ffWorld Buff Filter|r!")
+  title:SetJustifyH("CENTER")
+  title:SetWidth(460)
+
+  -- Subtitle / description
+  local subtitle = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  subtitle:SetPoint("TOP", title, "BOTTOM", 0, -12)
+  subtitle:SetWidth(460)
+  subtitle:SetJustifyH("CENTER")
+  subtitle:SetText("Open the 'Addon Settings' to configure.\n\nBlizzard's Buff- & Debuff-Frame will be hidden by default but can be reenabled in Settings.\n\nIf you have any questions or like the addon, feel free to leave comments on the curse comment section!")
+  f.subtitle = subtitle
+
+  -- Buttons
+  local btnWidth, btnHeight = 140, 28
+  local btnSettings = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  btnSettings:SetSize(btnWidth, btnHeight)
+  btnSettings:SetPoint("BOTTOM", f, "BOTTOM", -90, 48)
+  btnSettings:SetText("Addon Settings")
+  btnSettings:SetScript("OnClick", function()
+    EnsureDB()
+    if f.check and f.check:GetChecked() then
+      UUF_WBF_DB.dont_show_welcome = true
+    else
+      UUF_WBF_DB.dont_show_welcome = false
+    end
+    if UUF_WBF and UUF_WBF.OpenOptions then pcall(UUF_WBF.OpenOptions) end
+    f:Hide()
+  end)
+
+  local btnClose = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+  btnClose:SetSize(btnWidth, btnHeight)
+  btnClose:SetPoint("BOTTOM", f, "BOTTOM", 90, 48)
+  btnClose:SetText("Close")
+  btnClose:SetScript("OnClick", function()
+    EnsureDB()
+    if f.check and f.check:GetChecked() then
+      UUF_WBF_DB.dont_show_welcome = true
+    else
+      UUF_WBF_DB.dont_show_welcome = false
+    end
+    f:Hide()
+  end)
+
+  -- Don't show again checkbox
+  local check = CreateFrame("CheckButton", nil, f, "ChatConfigCheckButtonTemplate")
+  check:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 18, 18)
+  if check.Text then check.Text:SetText("Don't show this again") end
+  check:SetChecked(true)
+  f.check = check
+
+  f:Hide()
+  UUF_WBF.WelcomeFrame = f
+  return f
+end
+
+-- Show welcome frame (creates it on demand)
+function UUF_WBF.ShowWelcome()
+  EnsureDB()
+  if UUF_WBF_DB and UUF_WBF_DB.dont_show_welcome == true then return end
+  local f = CreateWelcomeFrame()
+  if f then f:Show() end
+end
+
+-- Slash for testing
+SLASH_UUFWBFWELCOME1 = "/uufwbfwelcome"
+SlashCmdList["UUFWBFWELCOME"] = function() UUF_WBF.ShowWelcome() end
+
 local f = CreateFrame("Frame")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -931,7 +917,9 @@ f:SetScript("OnEvent", function(_, event)
       UUF_WBF_DB.show_welcome = nil
     end
     if UUF_WBF_DB and UUF_WBF_DB.dont_show_welcome ~= true then
-      StaticPopup_Show("UUF_WBF_WELCOME")
+      if UUF_WBF and type(UUF_WBF.ShowWelcome) == "function" then
+        pcall(UUF_WBF.ShowWelcome)
+      end
     end
   end
 

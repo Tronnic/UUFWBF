@@ -1,8 +1,8 @@
-UUF |cff7fd5ffWorld Buff Filter|r
+UUF World Buff Filter
 
 <img width="600" height="600" alt="image" src="https://github.com/user-attachments/assets/4b631424-3675-40bf-8300-f7430f99d6fa" />
 
-UUF |cff7fd5ffWorld Buff Filter|r allows you to hide unwanted world and miscellaneous buffs from the Player frame in Unhalted Unit Frames (UUF) using a customizable SpellID blacklist.
+UUF World Buff Filter allows you to hide unwanted world and miscellaneous buffs from the Player frame in Unhalted Unit Frames (UUF) using a customizable SpellID blacklist.
 
 It is designed for players who want a clean buff display and prefer to see only relevant combat, class, or raid buffs while hiding temporary world effects, holiday buffs, zone effects, or other clutter.
 

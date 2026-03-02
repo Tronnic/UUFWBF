@@ -6,7 +6,7 @@
 ## Version: 1.1
 ## SavedVariables: UUF_WBF_DB
 ## IconTexture: Interface\AddOns\UUFWorldBuffFilter\uufwbf.tga
-## Author: Fraenky-Blackhand | Tronnic
+## Author: Fraenky-Blackhand / Tronnic
 ## X-Curse-Project-ID: 1467831
 
 Core.lua

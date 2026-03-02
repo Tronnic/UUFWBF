@@ -39,16 +39,12 @@ local UI = {
   debug = nil,
   lockText = nil,
   isLocked = false,
-
-  -- row list (scrollable)
-  scroll = nil,
-  scrollBar = nil,
   scrollOffset = 0,
   rowHeight = 22,
 
   listParent = nil,
   rows = {},
-  maxRows = 12,
+  maxRows = 10,
 
   -- dropdown
   dd = nil,
@@ -249,8 +245,6 @@ StaticPopupDialogs["UUF_WBF_CONFIRM_CLEAR_BLACKLIST"] = {
   preferredIndex = 3,
 }
 
--- Welcome popup shown on first run is now handled by a custom frame (CreateWelcomeFrame())
-
 -- ---------- ROW LIST UI ----------
 
 local function EnsureRows()
@@ -275,33 +269,40 @@ end
 local isUpdatingScroll = false
 
 local function UpdateScrollRange(totalItems)
-  if not (UI.scroll and UI.scrollBar and UI.listParent) then return end
-
-  local totalHeight = math.max(totalItems * UI.rowHeight, UI.rowHeight)
-  UI.listParent:SetHeight(totalHeight)
+  if not (UI.listParent) then return end
 
   local visibleHeight = UI.rowHeight * UI.maxRows
-  local maxScroll = math.max(0, totalHeight - visibleHeight)
+  UI.listParent:SetHeight(visibleHeight)
 
-  UI.scrollBar:SetMinMaxValues(0, maxScroll)
+  local totalPages = math.max(1, math.ceil(totalItems / UI.maxRows))
+  local maxOffset = (totalPages - 1) * UI.maxRows
 
-  local maxOffset = math.max(0, totalItems - UI.maxRows)
   if UI.scrollOffset > maxOffset then UI.scrollOffset = maxOffset end
   if UI.scrollOffset < 0 then UI.scrollOffset = 0 end
 
-  local targetValue = UI.scrollOffset * UI.rowHeight
+  if UI and UI.pageLabel then
+    local currentPage = math.floor((UI.scrollOffset or 0) / UI.maxRows) + 1
+    UI.pageLabel:SetText(string.format("Page %d/%d", currentPage, totalPages))
 
-  isUpdatingScroll = true
-  UI.scrollBar:SetValue(targetValue)
-  UI.scroll:SetVerticalScroll(targetValue)
-  isUpdatingScroll = false
+    if UI.prevPageBtn then
+      if UI.scrollOffset <= 0 then
+        if UI.prevPageBtn.Disable then UI.prevPageBtn:Disable() end
+        if UI.prevPageBtn.SetAlpha then UI.prevPageBtn:SetAlpha(0.5) end
+      else
+        if UI.prevPageBtn.Enable then UI.prevPageBtn:Enable() end
+        if UI.prevPageBtn.SetAlpha then UI.prevPageBtn:SetAlpha(1.0) end
+      end
+    end
 
-  if maxScroll > 0 then
-    UI.scrollBar:Show()
-  else
-    UI.scrollBar:Hide()
-    UI.scrollOffset = 0
-    UI.scroll:SetVerticalScroll(0)
+    if UI.nextPageBtn then
+      if currentPage >= totalPages then
+        if UI.nextPageBtn.Disable then UI.nextPageBtn:Disable() end
+        if UI.nextPageBtn.SetAlpha then UI.nextPageBtn:SetAlpha(0.5) end
+      else
+        if UI.nextPageBtn.Enable then UI.nextPageBtn:Enable() end
+        if UI.nextPageBtn.SetAlpha then UI.nextPageBtn:SetAlpha(1.0) end
+      end
+    end
   end
 end
 
@@ -330,10 +331,12 @@ local function RenderRowList()
     return
   end
 
-  local total = #ids
-  local maxOffset = math.max(0, total - UI.maxRows)
-  if UI.scrollOffset > maxOffset then UI.scrollOffset = maxOffset end
-  if UI.scrollOffset < 0 then UI.scrollOffset = 0 end
+local total = #ids
+local totalPages = math.max(1, math.ceil(total / UI.maxRows))
+local maxOffset = (totalPages - 1) * UI.maxRows
+
+if UI.scrollOffset > maxOffset then UI.scrollOffset = maxOffset end
+if UI.scrollOffset < 0 then UI.scrollOffset = 0 end
 
   local shown = math.min(total - UI.scrollOffset, UI.maxRows)
 
@@ -721,32 +724,52 @@ local function CreateOptionsUI()
   UI.ddAddBtn = ddAddBtn
   UI.ddRefreshBtn = ddRefreshBtn
 
-  -- List label
   local listLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   listLabel:SetPoint("TOPLEFT", dd, "BOTTOMLEFT", 14, -12)
   listLabel:SetText("Blacklisted buffs:")
 
-  -- ScrollFrame + content
-  local scroll = CreateFrame("ScrollFrame", "UUF_WBF_Scroll", frame, "UIPanelScrollFrameTemplate")
-  UI.scroll = scroll
-  scroll:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -8)
-  scroll:SetSize(580, UI.rowHeight * UI.maxRows)
-
-  local listParent = CreateFrame("Frame", nil, scroll)
+  local listParent = CreateFrame("Frame", nil, frame)
   UI.listParent = listParent
-  listParent:SetSize(560, UI.rowHeight)
-  scroll:SetScrollChild(listParent)
+  listParent:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -8)
+  listParent:SetSize(560, UI.rowHeight * UI.maxRows)
+  listParent:SetClipsChildren(true)
 
-  UI.scrollBar = _G[scroll:GetName() .. "ScrollBar"]
+  -- Paging controls
+  local prevBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  prevBtn:SetSize(80, 20)
+  prevBtn:SetPoint("TOPLEFT", listParent, "BOTTOMLEFT", 0, -8)
+  prevBtn:SetText("^")
 
-  if UI.scrollBar then
-    UI.scrollBar:SetScript("OnValueChanged", function(self, value)
-      if isUpdatingScroll then return end
-      value = value or 0
-      UI.scrollOffset = math.floor((value / UI.rowHeight) + 0.5)
-      RenderRowList()
-    end)
-  end
+  local pageLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  pageLabel:SetPoint("LEFT", prevBtn, "RIGHT", 8, 0)
+  pageLabel:SetText("Page 1/1")
+
+  local nextBtn = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+  nextBtn:SetSize(80, 20)
+  nextBtn:SetPoint("LEFT", pageLabel, "RIGHT", 8, 0)
+  nextBtn:SetText("v")
+
+  UI.prevPageBtn = prevBtn
+  UI.nextPageBtn = nextBtn
+  UI.pageLabel = pageLabel
+
+  prevBtn:SetScript("OnClick", function()
+    if UI.isLocked then SafePrint("Settings locked (combat/instance).") return end
+
+    UI.scrollOffset = math.max(0, (UI.scrollOffset or 0) - UI.maxRows)
+    RenderRowList()
+  end)
+
+  nextBtn:SetScript("OnClick", function()
+    if UI.isLocked then SafePrint("Settings locked (combat/instance).") return end
+
+    local total = #SortedBlacklistIDs()
+    local totalPages = math.max(1, math.ceil(total / UI.maxRows))
+    local maxOffset = (totalPages - 1) * UI.maxRows
+
+    UI.scrollOffset = math.min(maxOffset, (UI.scrollOffset or 0) + UI.maxRows)
+    RenderRowList()
+  end)
 
   -- Initial render
   RenderRowList()
@@ -808,7 +831,7 @@ function UUF_WBF.OpenOptions()
   end
 end
 
--- Create a custom welcome frame (avoids using StaticPopup which is reused)
+-- welcome frame
 local function CreateWelcomeFrame()
   if UUF_WBF.WelcomeFrame and UUF_WBF.WelcomeFrame.Create then return UUF_WBF.WelcomeFrame end
 
@@ -860,6 +883,9 @@ local function CreateWelcomeFrame()
       UUF_WBF_DB.dont_show_welcome = false
     end
     if UUF_WBF and UUF_WBF.OpenOptions then pcall(UUF_WBF.OpenOptions) end
+    C_Timer.After(0, function()
+    ApplySettingsLockState()
+    end)
     f:Hide()
   end)
 
@@ -889,7 +915,7 @@ local function CreateWelcomeFrame()
   return f
 end
 
--- Show welcome frame (creates it on demand)
+-- Show welcome frame
 function UUF_WBF.ShowWelcome()
   EnsureDB()
   if UUF_WBF_DB and UUF_WBF_DB.dont_show_welcome == true then return end
@@ -897,7 +923,7 @@ function UUF_WBF.ShowWelcome()
   if f then f:Show() end
 end
 
--- Slash for testing
+-- testing
 SLASH_UUFWBFWELCOME1 = "/uufwbfwelcome"
 SlashCmdList["UUFWBFWELCOME"] = function() UUF_WBF.ShowWelcome() end
 
